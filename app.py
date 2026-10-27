@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 import gradio as gr
 
-# Force IPv4 to prevent hanging on misconfigured IPv6 routes for Google APIs
+# Force IPv4
 try:
     import socket
     import urllib3.util.connection as urllib_conn
@@ -24,7 +24,6 @@ DEFAULT_LOGO_PATH = STATIC_DIR / "default_logo.png"
 NOTEBOOK_DIR = BASE_DIR / "notebook"
 MASTER_NOTEBOOK_PATH = NOTEBOOK_DIR / "aimindia-video-notebook.ipynb"
 
-# Default Kaggle credentials from environment
 DEFAULT_KAGGLE_USERNAME = "rathinnew"
 DEFAULT_KAGGLE_KEY = "KGAT_10cab40726cd143c3e7d52696187fb7a"
 
@@ -245,17 +244,11 @@ def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offse
             yield None, None, f"❌ Kaggle Kernel failed with status '{curr_st}'. Check Kaggle logs."
             return
 
-# Build Gradio Interface
-custom_css = """
-body { background-color: #0b0f19; }
-.gradio-container { max-width: 1100px !important; margin: auto !important; }
-"""
-
 with gr.Blocks(title="AimIndia Video Studio") as app:
     gr.Markdown("# 🎬 AimIndia Video Studio")
     gr.Markdown("**Kaggle GPU Cloud Orchestrator for Watermark Removal, Outro Trimming & Logo Overlay**")
 
-    with gr.Accordion("⚙️ Kaggle Account Credentials (Browser Sync)", open=False):
+    with gr.Accordion("⚙️ Kaggle Account Credentials", open=False):
         gr.Markdown("All processing runs on Kaggle's free Tesla T4 GPU.")
         with gr.Row():
             k_user = gr.Textbox(label="Kaggle Username", value=DEFAULT_KAGGLE_USERNAME, placeholder="e.g. rathinnew")
@@ -293,15 +286,17 @@ with gr.Blocks(title="AimIndia Video Studio") as app:
     preview_btn.click(
         preview_position,
         inputs=[v_in, logo_in, zoom_slider, width_slider, x_offset_slider, y_offset_slider],
-        outputs=[preview_img, status]
+        outputs=[preview_img, status],
+        show_api=False
     )
 
     btn.click(
         process_on_kaggle,
         inputs=[v_in, logo_in, trim_slider, zoom_slider, width_slider, x_offset_slider, y_offset_slider, k_user, k_key],
-        outputs=[v_out, f_out, status]
+        outputs=[v_out, f_out, status],
+        show_api=False
     )
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 7860))
-    app.launch(server_name="0.0.0.0", server_port=port, share=False)
+    app.launch(server_name="0.0.0.0", server_port=port, ssr=False, show_api=False)
