@@ -1,3 +1,14 @@
+---
+title: AimIndia Video Studio
+emoji: 🎬
+colorFrom: indigo
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+license: mit
+---
+
 # 🎬 AimIndia Video Studio
 
 Automated Headless & Interactive Video Processing Studio powered by **Kaggle GPU (Tesla T4 x2)**.
