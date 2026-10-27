@@ -287,16 +287,16 @@ with gr.Blocks(title="AimIndia Video Studio") as app:
         preview_position,
         inputs=[v_in, logo_in, zoom_slider, width_slider, x_offset_slider, y_offset_slider],
         outputs=[preview_img, status],
-        show_api=False
+        api_name=False
     )
 
     btn.click(
         process_on_kaggle,
         inputs=[v_in, logo_in, trim_slider, zoom_slider, width_slider, x_offset_slider, y_offset_slider, k_user, k_key],
         outputs=[v_out, f_out, status],
-        show_api=False
+        api_name=False
     )
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 7860))
-    app.launch(server_name="0.0.0.0", server_port=port, ssr=False, show_api=False)
+    app.launch(server_name="0.0.0.0", server_port=port, ssr=False)
