@@ -42,6 +42,20 @@ def get_video_dims(video_path):
     w, h = out.split('x')
     return int(w), int(h)
 
+def normalize_video_list(video_input):
+    if not video_input:
+        return []
+    if isinstance(video_input, (list, tuple)):
+        paths = []
+        for v in video_input:
+            p = getattr(v, 'name', str(v))
+            if p and os.path.exists(p):
+                paths.append(p)
+        return paths
+    else:
+        p = getattr(video_input, 'name', str(video_input))
+        return [p] if (p and os.path.exists(p)) else []
+
 def build_filter(w, h, zoom_pct, logo_in, logo_width, x_offset, y_offset, sharpness_pct=100):
     crop_w = int(w * (1 - zoom_pct / 100))
     crop_h = int(h * (1 - zoom_pct / 100))
@@ -68,71 +82,100 @@ def build_filter(w, h, zoom_pct, logo_in, logo_width, x_offset, y_offset, sharpn
         return f"crop={crop_w}:{crop_h}:0:0,scale={w}:{h}:flags=lanczos{sharp_filters}"
 
 def preview_position(video_in, logo_in, zoom_pct, logo_width, x_offset, y_offset, sharpness_pct=100):
-    if not video_in:
-        return None, "❌ Please upload a video first."
+    videos = normalize_video_list(video_in)
+    if not videos:
+        return None, "❌ Please upload at least one video first."
 
+    sample_vid = videos[0]
     active_logo = logo_in if (logo_in and os.path.exists(str(logo_in))) else (str(DEFAULT_LOGO_PATH) if DEFAULT_LOGO_PATH.exists() else None)
 
     try:
-        w, h = get_video_dims(video_in)
+        w, h = get_video_dims(sample_vid)
         temp_dir = tempfile.mkdtemp()
         preview_path = os.path.join(temp_dir, "preview.png")
 
         filter_str = build_filter(w, h, zoom_pct, active_logo, logo_width, x_offset, y_offset, sharpness_pct)
         if active_logo and os.path.exists(active_logo):
-            cmd = f"ffmpeg -ss 1 -i '{video_in}' -i '{active_logo}' -frames:v 1 -filter_complex '{filter_str}' '{preview_path}' -y"
+            cmd = f"ffmpeg -ss 1 -i '{sample_vid}' -i '{active_logo}' -frames:v 1 -filter_complex '{filter_str}' '{preview_path}' -y"
         else:
-            cmd = f"ffmpeg -ss 1 -i '{video_in}' -frames:v 1 -vf '{filter_str}' '{preview_path}' -y"
+            cmd = f"ffmpeg -ss 1 -i '{sample_vid}' -frames:v 1 -vf '{filter_str}' '{preview_path}' -y"
 
         subprocess.run(cmd, shell=True, check=True, capture_output=True)
-        return preview_path, "✅ Fast Preview Generated with 100% Sharpness! Inspect watermark cropping and logo placement below."
+        return preview_path, f"✅ Fast Preview Generated for '{Path(sample_vid).name}' with 100% Sharpness! Inspect watermark cropping and logo placement below."
     except Exception as e:
         return None, f"❌ Preview error: {str(e)}"
 
 def process_local(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offset, y_offset, sharpness_pct=100, progress=gr.Progress()):
-    if not video_in:
-        yield None, None, gr.update(value=None, interactive=False), "❌ Please upload a video first."
+    videos = normalize_video_list(video_in)
+    if not videos:
+        yield None, None, gr.update(value=None, interactive=False), "❌ Please upload at least one video first."
         return
 
     active_logo = logo_in if (logo_in and os.path.exists(str(logo_in))) else (str(DEFAULT_LOGO_PATH) if DEFAULT_LOGO_PATH.exists() else None)
-
-    yield None, None, gr.update(value=None, interactive=False), "⚡ [1/2] Analyzing video and configuring HD sharpness filters..."
-    progress(0.2, desc="Analyzing video...")
+    total_videos = len(videos)
 
     temp_dir = tempfile.mkdtemp()
-    out_path = os.path.join(temp_dir, "FINAL_VIDEO_CLEAN.mp4")
+    out_dir = Path(temp_dir) / "cleaned_videos"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    processed_files = []
 
-    try:
-        w, h = get_video_dims(video_in)
-        dur_cmd = f"ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 '{video_in}'"
-        total_dur = float(subprocess.check_output(dur_cmd, shell=True).decode('utf-8').strip())
-        new_dur = max(0.1, total_dur - float(trim_sec))
+    for idx, vid_path in enumerate(videos, 1):
+        vid_name = Path(vid_path).name
+        yield None, None, gr.update(value=None, interactive=False), f"⚡ [{idx}/{total_videos}] Processing '{vid_name}' with 100% HD sharpness & logo..."
+        progress((idx - 1) / total_videos, desc=f"Processing {idx}/{total_videos}: {vid_name}")
 
-        filter_str = build_filter(w, h, zoom_pct, active_logo, logo_width, x_offset, y_offset, sharpness_pct)
-        has_logo = bool(active_logo and os.path.exists(str(active_logo)))
-        filter_flag = "-filter_complex" if has_logo else "-vf"
-        logo_arg = f"-i '{active_logo}' " if has_logo else ""
+        clean_name = f"CLEAN_{vid_name}"
+        if not clean_name.lower().endswith(".mp4"):
+            clean_name = f"{Path(clean_name).stem}.mp4"
+        out_path = str(out_dir / clean_name)
 
-        progress(0.5, desc="Rendering clean HD video & overlaying logo...")
-        cmd = (
-            f"ffmpeg -i '{video_in}' {logo_arg}-t {new_dur:.3f} {filter_flag} '{filter_str}' "
-            f"-c:v libx264 -preset veryfast -crf 18 -c:a copy '{out_path}' -y"
-        )
-        subprocess.run(cmd, shell=True, check=True)
+        try:
+            w, h = get_video_dims(vid_path)
+            dur_cmd = f"ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 '{vid_path}'"
+            total_dur = float(subprocess.check_output(dur_cmd, shell=True).decode('utf-8').strip())
+            new_dur = max(0.1, total_dur - float(trim_sec))
 
+            filter_str = build_filter(w, h, zoom_pct, active_logo, logo_width, x_offset, y_offset, sharpness_pct)
+            has_logo = bool(active_logo and os.path.exists(str(active_logo)))
+            filter_flag = "-filter_complex" if has_logo else "-vf"
+            logo_arg = f"-i '{active_logo}' " if has_logo else ""
+
+            cmd = (
+                f"ffmpeg -i '{vid_path}' {logo_arg}-t {new_dur:.3f} {filter_flag} '{filter_str}' "
+                f"-c:v libx264 -preset veryfast -crf 18 -c:a copy '{out_path}' -y"
+            )
+            subprocess.run(cmd, shell=True, check=True)
+            processed_files.append(out_path)
+        except Exception as e:
+            yield None, None, gr.update(value=None, interactive=False), f"❌ Error processing '{vid_name}': {str(e)}"
+            return
+
+    if total_videos == 1:
+        final_file = processed_files[0]
         yield (
-            out_path,
-            out_path,
-            gr.update(value=out_path, interactive=True, label="⬇️ Download Clean Video (MP4)"),
+            final_file,
+            [final_file],
+            gr.update(value=final_file, interactive=True, label="⬇️ Download Clean Video (MP4)"),
             f"🎉 SUCCESS! Processed with 100% HD Sharpness & AimIndia logo!\n⬇️ Click the large download button below or click the file card to download your video!"
         )
-        progress(1.0, desc="Done!")
-    except Exception as e:
-        yield None, None, gr.update(value=None, interactive=False), f"❌ Processing error: {str(e)}"
+    else:
+        zip_base = Path(temp_dir) / "all_cleaned_videos"
+        shutil.make_archive(str(zip_base), "zip", str(out_dir))
+        zip_file = f"{zip_base}.zip"
+        all_download_items = [zip_file] + processed_files
+
+        yield (
+            processed_files[0],
+            all_download_items,
+            gr.update(value=zip_file, interactive=True, label=f"⬇️ Download All {total_videos} Clean Videos (.ZIP Archive)"),
+            f"🎉 SUCCESS! All {total_videos} videos processed in batch with 100% HD Sharpness & AimIndia logo!\n⬇️ Click the large download button to download the complete ZIP archive, or download individual files below!"
+        )
+    progress(1.0, desc="Done!")
 
 def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offset, y_offset, sharpness_pct, kaggle_user, kaggle_key, progress=gr.Progress()):
-    if not video_in:
-        yield None, None, gr.update(value=None, interactive=False), "❌ Please upload a video first."
+    videos = normalize_video_list(video_in)
+    if not videos:
+        yield None, None, gr.update(value=None, interactive=False), "❌ Please upload at least one video first."
         return
 
     username = (kaggle_user or "").strip() or DEFAULT_KAGGLE_USERNAME
@@ -172,8 +215,9 @@ def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offse
     (ds_dir / "videos").mkdir(parents=True, exist_ok=True)
     (ds_dir / "logos").mkdir(parents=True, exist_ok=True)
 
-    vid_path = Path(video_in)
-    shutil.copy2(vid_path, ds_dir / "videos" / vid_path.name)
+    for v in videos:
+        p = Path(v)
+        shutil.copy2(p, ds_dir / "videos" / p.name)
 
     active_logo = logo_in if (logo_in and os.path.exists(str(logo_in))) else (str(DEFAULT_LOGO_PATH) if DEFAULT_LOGO_PATH.exists() else None)
     if active_logo and os.path.exists(active_logo):
@@ -326,14 +370,38 @@ def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offse
             progress(0.9, desc="Downloading clean video...")
             api.kernels_output(f"{username}/{kernel_slug}", path=str(out_dir))
 
-            cand_files = list(out_dir.glob("FINAL_VIDEO_CLEAN.mp4")) + list(out_dir.glob("*.mp4")) + list(out_dir.glob("*.zip"))
-            if cand_files:
-                final_out = cand_files[0]
+            zip_files = list(out_dir.glob("*.zip"))
+            mp4_files = [p for p in out_dir.glob("*.mp4") if not p.name.startswith("preview")]
+            all_items = [str(z) for z in zip_files] + [str(m) for m in mp4_files]
+
+            if len(videos) > 1 and zip_files:
+                target_dl = str(zip_files[0])
+                first_vid = str(mp4_files[0]) if mp4_files else None
+                yield (
+                    first_vid,
+                    all_items,
+                    gr.update(value=target_dl, interactive=True, label=f"⬇️ Download All {len(videos)} Clean Videos (.ZIP Archive)"),
+                    f"🎉 SUCCESS! All {len(videos)} videos processed cleanly on Kaggle GPU!\n⬇️ Click the large download button below to download the complete ZIP archive, or download individual files from the list!"
+                )
+                progress(1.0, desc="Done!")
+                return
+            elif mp4_files:
+                final_out = mp4_files[0]
                 yield (
                     str(final_out),
-                    str(final_out),
+                    all_items if len(all_items) > 1 else str(final_out),
                     gr.update(value=str(final_out), interactive=True, label=f"⬇️ Download Clean Video ({final_out.name})"),
                     f"🎉 SUCCESS! Processed cleanly on Kaggle GPU: {final_out.name}\n⬇️ Click the large download button below or click the file card to download your clean video!"
+                )
+                progress(1.0, desc="Done!")
+                return
+            elif zip_files:
+                target_dl = str(zip_files[0])
+                yield (
+                    None,
+                    all_items,
+                    gr.update(value=target_dl, interactive=True, label="⬇️ Download Clean Output (.ZIP Archive)"),
+                    f"🎉 SUCCESS! Processed on Kaggle GPU: {zip_files[0].name}"
                 )
                 progress(1.0, desc="Done!")
                 return
@@ -364,8 +432,16 @@ with gr.Blocks(title="AimIndia Video Studio") as app:
 
     with gr.Row():
         with gr.Column(scale=1):
-            gr.Markdown("### 1. Upload Video & Logo")
-            v_in = gr.Video(label="📹 Raw NotebookLM / Source Video")
+            gr.Markdown("### 1. Upload Video(s) & Logo")
+            v_in = gr.File(
+                label="📹 Upload Video(s) — Drag & Drop Single or Multiple MP4/MOV Files",
+                file_count="multiple",
+                file_types=["video"]
+            )
+            v_preview_player = gr.Video(
+                label="🎬 Selected Video Player (Auto-Loads First Video)",
+                interactive=False
+            )
             logo_in = gr.Image(
                 value=str(DEFAULT_LOGO_PATH) if DEFAULT_LOGO_PATH.exists() else None,
                 type="filepath",
@@ -389,10 +465,21 @@ with gr.Blocks(title="AimIndia Video Studio") as app:
         with gr.Column(scale=1):
             gr.Markdown("### 3. Preview & Output")
             preview_img = gr.Image(label="📍 Fast Position Preview")
-            v_out = gr.Video(label="🎬 Final Clean Video (Play or click ⋮ to Download)")
-            f_out = gr.File(label="📥 Processed Video File (Click Card to Download)")
-            dl_btn = gr.DownloadButton("⬇️ Click Here to Download Clean Video (MP4)", variant="primary", size="lg", interactive=False)
+            v_out = gr.Video(label="🎬 Final Clean Video Player (Play or click ⋮ to Download)")
+            f_out = gr.File(label="📥 Processed Video Files / ZIP Archive (Click Card to Download)", file_count="multiple")
+            dl_btn = gr.DownloadButton("⬇️ Click Here to Download Clean Video / ZIP", variant="primary", size="lg", interactive=False)
             status = gr.Textbox(label="Status & Cloud Log", lines=3)
+
+    def load_first_video_preview(files):
+        vids = normalize_video_list(files)
+        return vids[0] if vids else None
+
+    v_in.change(
+        load_first_video_preview,
+        inputs=[v_in],
+        outputs=[v_preview_player],
+        api_name=False
+    )
 
     preview_btn.click(
         preview_position,
