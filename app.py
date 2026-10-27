@@ -8,6 +8,14 @@ import tempfile
 from pathlib import Path
 import gradio as gr
 
+# Support Hugging Face ZeroGPU if available
+try:
+    import spaces
+    zero_gpu_decorator = spaces.GPU
+except ImportError:
+    def zero_gpu_decorator(func):
+        return func
+
 # Force IPv4
 try:
     import socket
@@ -50,6 +58,7 @@ def build_filter(w, h, zoom_pct, logo_in, logo_width, x_offset, y_offset):
     else:
         return f"crop={crop_w}:{crop_h}:0:0,scale={w}:{h}:flags=lanczos,unsharp=5:5:0.6:5:5:0.0"
 
+@zero_gpu_decorator
 def preview_position(video_in, logo_in, zoom_pct, logo_width, x_offset, y_offset):
     if not video_in:
         return None, "❌ Please upload a video first."
