@@ -81,6 +81,48 @@ def preview_position(video_in, logo_in, zoom_pct, logo_width, x_offset, y_offset
     except Exception as e:
         return None, f"❌ Preview error: {str(e)}"
 
+@zero_gpu_decorator
+def process_local(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offset, y_offset, progress=gr.Progress()):
+    if not video_in:
+        yield None, None, gr.update(value=None, interactive=False), "❌ Please upload a video first."
+        return
+
+    active_logo = logo_in if (logo_in and os.path.exists(str(logo_in))) else (str(DEFAULT_LOGO_PATH) if DEFAULT_LOGO_PATH.exists() else None)
+
+    yield None, None, gr.update(value=None, interactive=False), "⚡ [1/2] Analyzing video and configuring filters..."
+    progress(0.2, desc="Analyzing video...")
+
+    temp_dir = tempfile.mkdtemp()
+    out_path = os.path.join(temp_dir, "FINAL_VIDEO_CLEAN.mp4")
+
+    try:
+        w, h = get_video_dims(video_in)
+        dur_cmd = f"ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 '{video_in}'"
+        total_dur = float(subprocess.check_output(dur_cmd, shell=True).decode('utf-8').strip())
+        new_dur = max(0.1, total_dur - float(trim_sec))
+
+        filter_str = build_filter(w, h, zoom_pct, active_logo, logo_width, x_offset, y_offset)
+        has_logo = bool(active_logo and os.path.exists(str(active_logo)))
+        filter_flag = "-filter_complex" if has_logo else "-vf"
+        logo_arg = f"-i '{active_logo}' " if has_logo else ""
+
+        progress(0.5, desc="Rendering clean video & overlaying logo...")
+        cmd = (
+            f"ffmpeg -i '{video_in}' {logo_arg}-t {new_dur:.3f} {filter_flag} '{filter_str}' "
+            f"-c:v libx264 -preset veryfast -crf 19 -c:a copy '{out_path}' -y"
+        )
+        subprocess.run(cmd, shell=True, check=True)
+
+        yield (
+            out_path,
+            out_path,
+            gr.update(value=out_path, interactive=True, label="⬇️ Download Clean Video (MP4)"),
+            f"🎉 SUCCESS! Processed in seconds with AimIndia logo!\n⬇️ Click the large download button below or click the file card to download your video!"
+        )
+        progress(1.0, desc="Done!")
+    except Exception as e:
+        yield None, None, gr.update(value=None, interactive=False), f"❌ Processing error: {str(e)}"
+
 def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offset, y_offset, kaggle_user, kaggle_key, progress=gr.Progress()):
     if not video_in:
         yield None, None, gr.update(value=None, interactive=False), "❌ Please upload a video first."
@@ -129,6 +171,7 @@ def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offse
     active_logo = logo_in if (logo_in and os.path.exists(str(logo_in))) else (str(DEFAULT_LOGO_PATH) if DEFAULT_LOGO_PATH.exists() else None)
     if active_logo and os.path.exists(active_logo):
         shutil.copy2(active_logo, ds_dir / "logos" / f"logo{Path(active_logo).suffix}")
+        shutil.copy2(active_logo, ds_dir / f"logo{Path(active_logo).suffix}")
 
     cfg = {
         "trim_sec": float(trim_sec),
@@ -331,7 +374,8 @@ with gr.Blocks(title="AimIndia Video Studio") as app:
 
             with gr.Row():
                 preview_btn = gr.Button("👁️ Fast 1-Frame Preview", variant="secondary")
-                btn = gr.Button("🚀 Process on Kaggle GPU", variant="primary")
+                fast_btn = gr.Button("⚡ Fast Process (3-5s Instant)", variant="primary", scale=2)
+                kaggle_btn = gr.Button("🚀 Process on Kaggle GPU", variant="secondary", scale=1)
 
         with gr.Column(scale=1):
             gr.Markdown("### 3. Preview & Output")
@@ -348,7 +392,14 @@ with gr.Blocks(title="AimIndia Video Studio") as app:
         api_name=False
     )
 
-    btn.click(
+    fast_btn.click(
+        process_local,
+        inputs=[v_in, logo_in, trim_slider, zoom_slider, width_slider, x_offset_slider, y_offset_slider],
+        outputs=[v_out, f_out, dl_btn, status],
+        api_name=False
+    )
+
+    kaggle_btn.click(
         process_on_kaggle,
         inputs=[v_in, logo_in, trim_slider, zoom_slider, width_slider, x_offset_slider, y_offset_slider, k_user, k_key],
         outputs=[v_out, f_out, dl_btn, status],
