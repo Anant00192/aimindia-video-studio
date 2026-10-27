@@ -1,0 +1,9 @@
+uploads/
+staging/
+output/
+__pycache__/
+*.pyc
+*.log
+*.meta.json
+.kaggle/
+static/preview.png

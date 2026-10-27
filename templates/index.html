@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AimIndia Video Studio - Kaggle GPU Video Cleaner</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="navbar">
+        <div class="logo">
+            <span class="icon">🎬</span>
+            <div>
+                <h1>AimIndia Video Studio</h1>
+                <span class="badge">Kaggle GPU Cloud Edition</span>
+            </div>
+        </div>
+        <div class="connection-status" id="connectionStatus">
+            <span class="dot disconnected"></span>
+            <span id="connectionText">Checking Kaggle API...</span>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- Section 1: Kaggle Account & Browser Sync -->
+        <section class="card" id="credsCard">
+            <div class="card-header creds-header">
+                <div>
+                    <h2>1. Kaggle GPU Cloud Account <span class="tag-browser-sync" id="browserSyncTag">🌐 Browser Sync</span></h2>
+                    <span class="subtitle">Securely executes on Kaggle Tesla T4 GPU with hardware NVENC acceleration.</span>
+                </div>
+                <div class="creds-header-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" id="toggleCredsBtn">
+                        ⚙️ Manage Account
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="account-badge-box" id="accountBadgeBox">
+                    <div class="account-info">
+                        <span class="badge-status-dot"></span>
+                        <div style="flex: 1;">
+                            <div class="account-name-line">
+                                <span class="account-label">Active Account:</span>
+                                <strong id="activeUsernameDisplay">@rathinnew</strong>
+                                <span class="tag-default" id="accountTagBadge">Default</span>
+                                <span class="tag-browser-cache" id="browserCacheBadge">Saved in this Browser</span>
+                            </div>
+                            <p class="account-subtext" id="accountSubtext">All background GPU processing runs under this authenticated Kaggle account.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Add/Switch Form (Hidden by default) -->
+                <form id="credsForm" class="creds-grid hidden" style="margin-top: 14px;">
+                    <div class="input-group">
+                        <label for="kaggleUsername">Kaggle Username</label>
+                        <input type="text" id="kaggleUsername" placeholder="e.g. your_kaggle_username">
+                    </div>
+                    <div class="input-group">
+                        <label for="kaggleKey">Kaggle API Key (KGAT_...)</label>
+                        <input type="password" id="kaggleKey" placeholder="Paste Kaggle API token">
+                    </div>
+                    <div class="btn-group" style="display: flex; gap: 8px;">
+                        <button type="submit" class="btn btn-primary" id="saveCredsBtn">💾 Save Account</button>
+                        <button type="button" class="btn btn-secondary" id="resetDefaultCredsBtn" title="Reset to default">↩️ Reset Default</button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <!-- Section 2: Media Uploads (Video & Logo) -->
+        <section class="card">
+            <div class="card-header">
+                <h2>2. Video & Logo Inputs</h2>
+                <span class="subtitle">Upload your raw NotebookLM video and optional custom logo.</span>
+            </div>
+            <div class="card-body">
+                <div class="media-grid">
+                    <!-- Video Upload Box -->
+                    <div class="media-box" id="videoBox">
+                        <div class="mb-header">
+                            <span class="mb-icon">📹</span>
+                            <div>
+                                <h3>Input Video(s)</h3>
+                                <span class="mb-desc">Raw NotebookLM or source video (.mp4, .mov, .mkv)</span>
+                            </div>
+                        </div>
+                        <div class="dropzone" id="videoDropzone">
+                            <input type="file" id="videoFileInput" accept=".mp4,.mov,.mkv,.webm,.avi" style="display:none">
+                            <span class="dropzone-icon">📥</span>
+                            <p><strong>Click or Drag & Drop</strong> video here</p>
+                            <span class="dropzone-hint">Supports up to 50GB</span>
+                        </div>
+                        <div class="file-list" id="videoList">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                    <!-- Logo Upload Box -->
+                    <div class="media-box" id="logoBox">
+                        <div class="mb-header">
+                            <span class="mb-icon">🖼️</span>
+                            <div>
+                                <h3>Brand Logo Overlay</h3>
+                                <span class="mb-desc">Transparent PNG placed over the bottom-right watermark</span>
+                            </div>
+                        </div>
+                        <div class="logo-preview-card">
+                            <div class="logo-thumb-container">
+                                <img id="activeLogoImg" src="/static/default_logo.png" alt="Logo Preview">
+                            </div>
+                            <div class="logo-details">
+                                <strong id="activeLogoTitle">AimIndia Transparent Logo</strong>
+                                <span class="logo-meta" id="activeLogoMeta">Bundled Default (PNG)</span>
+                                <div class="logo-actions">
+                                    <input type="file" id="logoFileInput" accept=".png,.webp,.jpg,.jpeg" style="display:none">
+                                    <button type="button" class="btn btn-secondary btn-sm" id="uploadLogoBtn">📤 Upload Custom</button>
+                                    <button type="button" class="btn btn-outline-danger btn-sm hidden" id="resetLogoBtn">↩️ Use Default</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 3: Fine-Tuning Parameters & Instant Preview -->
+        <section class="card">
+            <div class="card-header">
+                <h2>3. Adjustment Controls & Fast Position Preview</h2>
+                <span class="subtitle">Tune zoom, outro cut, and logo position. Test with fast 1-frame preview before GPU render.</span>
+            </div>
+            <div class="card-body">
+                <div class="controls-grid">
+                    <!-- Sliders Column -->
+                    <div class="sliders-col">
+                        <!-- Trim Outro -->
+                        <div class="control-row">
+                            <div class="control-label">
+                                <span>✂️ Trim Outro Seconds:</span>
+                                <span class="slider-val" id="valTrimSec">3.0s</span>
+                            </div>
+                            <input type="range" class="styled-range" id="sliderTrimSec" min="0.0" max="10.0" step="0.1" value="3.0">
+                            <span class="control-help">Trims the ending slide (e.g. Gemini / NotebookLM outro).</span>
+                        </div>
+
+                        <!-- Zoom % -->
+                        <div class="control-row">
+                            <div class="control-label">
+                                <span>🔍 Zoom to Crop Watermark Corner (%):</span>
+                                <span class="slider-val" id="valZoomPct">6%</span>
+                            </div>
+                            <input type="range" class="styled-range" id="sliderZoomPct" min="0" max="20" step="1" value="6">
+                            <span class="control-help">Crops a small margin then Lanczos upscales + unsharp to eliminate watermark.</span>
+                        </div>
+
+                        <!-- Logo Width -->
+                        <div class="control-row">
+                            <div class="control-label">
+                                <span>📐 Logo Width (Pixels):</span>
+                                <span class="slider-val" id="valLogoWidth">180px</span>
+                            </div>
+                            <input type="range" class="styled-range" id="sliderLogoWidth" min="50" max="800" step="10" value="180">
+                            <span class="control-help">Scales your logo proportionally to this width.</span>
+                        </div>
+
+                        <!-- Logo X Offset -->
+                        <div class="control-row">
+                            <div class="control-label">
+                                <span>➡️ Logo X Offset (from Right Edge):</span>
+                                <span class="slider-val" id="valXOffset">20px</span>
+                            </div>
+                            <input type="range" class="styled-range" id="sliderXOffset" min="-100" max="600" step="5" value="20">
+                            <span class="control-help">Horizontal spacing from right video boundary.</span>
+                        </div>
+
+                        <!-- Logo Y Offset -->
+                        <div class="control-row">
+                            <div class="control-label">
+                                <span>⬆️ Logo Y Offset (from Bottom Edge):</span>
+                                <span class="slider-val" id="valYOffset">20px</span>
+                            </div>
+                            <input type="range" class="styled-range" id="sliderYOffset" min="-100" max="600" step="5" value="20">
+                            <span class="control-help">Vertical spacing from bottom video boundary.</span>
+                        </div>
+
+                        <div style="margin-top: 14px;">
+                            <button type="button" class="btn btn-secondary w-100" id="previewBtn">
+                                👁️ Generate Fast 1-Frame Preview
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Live Frame Preview Column -->
+                    <div class="preview-col">
+                        <div class="preview-header">
+                            <h4>📍 Frame Preview</h4>
+                            <span class="badge-sub">Single Frame Test</span>
+                        </div>
+                        <div class="preview-stage" id="previewStage">
+                            <img id="previewImg" src="" alt="Click Preview to render frame" class="hidden">
+                            <div class="preview-placeholder" id="previewPlaceholder">
+                                <span>👁️</span>
+                                <p>Upload a video and click <strong>"Generate Fast 1-Frame Preview"</strong> to inspect watermark removal and logo placement.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 4: Kaggle GPU Execution & Output -->
+        <section class="card">
+            <div class="card-header">
+                <h2>4. Launch Kaggle GPU Pipeline</h2>
+                <span class="subtitle">Pushes your video & settings to Kaggle Cloud, encodes with NVENC GPU, and downloads the clean result.</span>
+            </div>
+            <div class="card-body">
+                <div class="launch-bar">
+                    <button type="button" class="btn btn-primary btn-lg" id="launchBtn">
+                        🚀 Process on Kaggle GPU
+                    </button>
+                    <button type="button" class="btn btn-outline-danger hidden" id="cancelBtn">
+                        ⏹️ Stop / Cancel
+                    </button>
+                </div>
+
+                <!-- Progress Bar -->
+                <div class="progress-container hidden" id="progressContainer">
+                    <div class="progress-bar-wrap">
+                        <div class="progress-bar" id="progressBar" style="width: 0%;"></div>
+                    </div>
+                    <div class="progress-meta">
+                        <span id="progressStatusText">Submitting job to Kaggle...</span>
+                        <strong id="progressPctText">0%</strong>
+                    </div>
+                </div>
+
+                <!-- Live Terminal Logs -->
+                <div class="terminal-box" id="terminalBox">
+                    <div class="terminal-header">
+                        <span class="terminal-dot red"></span>
+                        <span class="terminal-dot yellow"></span>
+                        <span class="terminal-dot green"></span>
+                        <span class="terminal-title">Kaggle GPU Cloud Logs</span>
+                    </div>
+                    <div class="terminal-body" id="terminalBody">
+                        <div class="log-line text-muted">[System] AimIndia Video Studio initialized. Ready for video processing.</div>
+                    </div>
+                </div>
+
+                <!-- Final Video Download Box -->
+                <div class="download-box hidden" id="downloadBox">
+                    <div class="download-content">
+                        <span class="download-icon">🎉</span>
+                        <div>
+                            <h3>Video Processing Complete!</h3>
+                            <p id="downloadFilename">FINAL_VIDEO_CLEAN.mp4 is ready for download.</p>
+                        </div>
+                        <a href="/api/download" class="btn btn-success btn-lg" id="downloadBtn" download>
+                            📥 Download Clean Video
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <p>AimIndia Video Studio • Powered by Kaggle GPU NVENC Hardware Acceleration • <a href="https://github.com/Anant00192/aimindia-video-studio" target="_blank">GitHub Repository</a></p>
+    </footer>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
