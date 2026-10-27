@@ -41,25 +41,33 @@ def get_video_dims(video_path):
     w, h = out.split('x')
     return int(w), int(h)
 
-def build_filter(w, h, zoom_pct, logo_in, logo_width, x_offset, y_offset):
+def build_filter(w, h, zoom_pct, logo_in, logo_width, x_offset, y_offset, sharpness_pct=100):
     crop_w = int(w * (1 - zoom_pct / 100))
     crop_h = int(h * (1 - zoom_pct / 100))
     crop_w -= crop_w % 2
     crop_h -= crop_h % 2
 
+    s_pct = max(0.0, min(100.0, float(sharpness_pct)))
+    if s_pct > 0:
+        cas_val = min(1.0, round((s_pct / 100.0) * 0.8, 2))
+        unsharp_la = round(0.5 + (s_pct / 100.0) * 0.9, 2)
+        unsharp_ca = round((s_pct / 100.0) * 0.4, 2)
+        sharp_filters = f",cas={cas_val},unsharp=5:5:{unsharp_la}:5:5:{unsharp_ca}"
+    else:
+        sharp_filters = ",unsharp=5:5:0.5:5:5:0.0"
+
     has_logo = bool(logo_in and os.path.exists(str(logo_in)))
     if has_logo:
         return (
-            f"[0:v]crop={crop_w}:{crop_h}:0:0,scale={w}:{h}:flags=lanczos,"
-            f"unsharp=5:5:0.6:5:5:0.0[base];"
+            f"[0:v]crop={crop_w}:{crop_h}:0:0,scale={w}:{h}:flags=lanczos{sharp_filters}[base];"
             f"[1:v]format=rgba,scale={logo_width}:-1[logo];"
             f"[base][logo]overlay=W-w-{x_offset}:H-h-{y_offset}:format=auto"
         )
     else:
-        return f"crop={crop_w}:{crop_h}:0:0,scale={w}:{h}:flags=lanczos,unsharp=5:5:0.6:5:5:0.0"
+        return f"crop={crop_w}:{crop_h}:0:0,scale={w}:{h}:flags=lanczos{sharp_filters}"
 
 @zero_gpu_decorator
-def preview_position(video_in, logo_in, zoom_pct, logo_width, x_offset, y_offset):
+def preview_position(video_in, logo_in, zoom_pct, logo_width, x_offset, y_offset, sharpness_pct=100):
     if not video_in:
         return None, "❌ Please upload a video first."
 
@@ -70,26 +78,26 @@ def preview_position(video_in, logo_in, zoom_pct, logo_width, x_offset, y_offset
         temp_dir = tempfile.mkdtemp()
         preview_path = os.path.join(temp_dir, "preview.png")
 
-        filter_str = build_filter(w, h, zoom_pct, active_logo, logo_width, x_offset, y_offset)
+        filter_str = build_filter(w, h, zoom_pct, active_logo, logo_width, x_offset, y_offset, sharpness_pct)
         if active_logo and os.path.exists(active_logo):
             cmd = f"ffmpeg -ss 1 -i '{video_in}' -i '{active_logo}' -frames:v 1 -filter_complex '{filter_str}' '{preview_path}' -y"
         else:
             cmd = f"ffmpeg -ss 1 -i '{video_in}' -frames:v 1 -vf '{filter_str}' '{preview_path}' -y"
 
         subprocess.run(cmd, shell=True, check=True, capture_output=True)
-        return preview_path, "✅ Fast Preview Generated! Inspect watermark cropping and logo placement below."
+        return preview_path, "✅ Fast Preview Generated with 100% Sharpness! Inspect watermark cropping and logo placement below."
     except Exception as e:
         return None, f"❌ Preview error: {str(e)}"
 
 @zero_gpu_decorator
-def process_local(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offset, y_offset, progress=gr.Progress()):
+def process_local(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offset, y_offset, sharpness_pct=100, progress=gr.Progress()):
     if not video_in:
         yield None, None, gr.update(value=None, interactive=False), "❌ Please upload a video first."
         return
 
     active_logo = logo_in if (logo_in and os.path.exists(str(logo_in))) else (str(DEFAULT_LOGO_PATH) if DEFAULT_LOGO_PATH.exists() else None)
 
-    yield None, None, gr.update(value=None, interactive=False), "⚡ [1/2] Analyzing video and configuring filters..."
+    yield None, None, gr.update(value=None, interactive=False), "⚡ [1/2] Analyzing video and configuring HD sharpness filters..."
     progress(0.2, desc="Analyzing video...")
 
     temp_dir = tempfile.mkdtemp()
@@ -101,15 +109,15 @@ def process_local(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offset, y
         total_dur = float(subprocess.check_output(dur_cmd, shell=True).decode('utf-8').strip())
         new_dur = max(0.1, total_dur - float(trim_sec))
 
-        filter_str = build_filter(w, h, zoom_pct, active_logo, logo_width, x_offset, y_offset)
+        filter_str = build_filter(w, h, zoom_pct, active_logo, logo_width, x_offset, y_offset, sharpness_pct)
         has_logo = bool(active_logo and os.path.exists(str(active_logo)))
         filter_flag = "-filter_complex" if has_logo else "-vf"
         logo_arg = f"-i '{active_logo}' " if has_logo else ""
 
-        progress(0.5, desc="Rendering clean video & overlaying logo...")
+        progress(0.5, desc="Rendering clean HD video & overlaying logo...")
         cmd = (
             f"ffmpeg -i '{video_in}' {logo_arg}-t {new_dur:.3f} {filter_flag} '{filter_str}' "
-            f"-c:v libx264 -preset veryfast -crf 19 -c:a copy '{out_path}' -y"
+            f"-c:v libx264 -preset veryfast -crf 18 -c:a copy '{out_path}' -y"
         )
         subprocess.run(cmd, shell=True, check=True)
 
@@ -117,13 +125,13 @@ def process_local(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offset, y
             out_path,
             out_path,
             gr.update(value=out_path, interactive=True, label="⬇️ Download Clean Video (MP4)"),
-            f"🎉 SUCCESS! Processed in seconds with AimIndia logo!\n⬇️ Click the large download button below or click the file card to download your video!"
+            f"🎉 SUCCESS! Processed with 100% HD Sharpness & AimIndia logo!\n⬇️ Click the large download button below or click the file card to download your video!"
         )
         progress(1.0, desc="Done!")
     except Exception as e:
         yield None, None, gr.update(value=None, interactive=False), f"❌ Processing error: {str(e)}"
 
-def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offset, y_offset, kaggle_user, kaggle_key, progress=gr.Progress()):
+def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offset, y_offset, sharpness_pct, kaggle_user, kaggle_key, progress=gr.Progress()):
     if not video_in:
         yield None, None, gr.update(value=None, interactive=False), "❌ Please upload a video first."
         return
@@ -178,7 +186,8 @@ def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offse
         "zoom_pct": int(zoom_pct),
         "logo_width": int(logo_width),
         "x_offset": int(x_offset),
-        "y_offset": int(y_offset)
+        "y_offset": int(y_offset),
+        "sharpness_pct": int(sharpness_pct)
     }
     with open(ds_dir / "config.json", "w") as f:
         json.dump(cfg, f, indent=2)
@@ -368,6 +377,7 @@ with gr.Blocks(title="AimIndia Video Studio") as app:
             gr.Markdown("### 2. Fine-Tuning Controls")
             trim_slider = gr.Slider(minimum=0.0, maximum=10.0, value=3.0, step=0.1, label="✂️ Trim Outro Seconds (Cuts Gemini Ending)")
             zoom_slider = gr.Slider(minimum=0, maximum=20, value=6, step=1, label="🔍 Zoom to Crop Watermark Corner (%)")
+            sharp_slider = gr.Slider(minimum=0, maximum=100, value=100, step=5, label="✨ Video Sharpness / 100% HD Enhancement (%)")
             width_slider = gr.Slider(minimum=50, maximum=800, value=180, step=10, label="📐 Logo Width (Pixels)")
             x_offset_slider = gr.Slider(minimum=-100, maximum=600, value=20, step=5, label="➡️ Logo X Offset (from Right)")
             y_offset_slider = gr.Slider(minimum=-100, maximum=600, value=20, step=5, label="⬆️ Logo Y Offset (from Bottom)")
@@ -387,21 +397,21 @@ with gr.Blocks(title="AimIndia Video Studio") as app:
 
     preview_btn.click(
         preview_position,
-        inputs=[v_in, logo_in, zoom_slider, width_slider, x_offset_slider, y_offset_slider],
+        inputs=[v_in, logo_in, zoom_slider, width_slider, x_offset_slider, y_offset_slider, sharp_slider],
         outputs=[preview_img, status],
         api_name=False
     )
 
     fast_btn.click(
         process_local,
-        inputs=[v_in, logo_in, trim_slider, zoom_slider, width_slider, x_offset_slider, y_offset_slider],
+        inputs=[v_in, logo_in, trim_slider, zoom_slider, width_slider, x_offset_slider, y_offset_slider, sharp_slider],
         outputs=[v_out, f_out, dl_btn, status],
         api_name=False
     )
 
     kaggle_btn.click(
         process_on_kaggle,
-        inputs=[v_in, logo_in, trim_slider, zoom_slider, width_slider, x_offset_slider, y_offset_slider, k_user, k_key],
+        inputs=[v_in, logo_in, trim_slider, zoom_slider, width_slider, x_offset_slider, y_offset_slider, sharp_slider, k_user, k_key],
         outputs=[v_out, f_out, dl_btn, status],
         api_name=False
     )
