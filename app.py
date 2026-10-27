@@ -8,6 +8,15 @@ import tempfile
 from pathlib import Path
 import gradio as gr
 
+# Hugging Face ZeroGPU startup detector
+try:
+    import spaces
+    @spaces.GPU
+    def _hf_zerogpu_init():
+        return True
+except Exception:
+    pass
+
 # Force IPv4
 try:
     import socket
