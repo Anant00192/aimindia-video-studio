@@ -211,7 +211,7 @@ def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offse
 
     k_meta = {
         "id": f"{username}/{kernel_slug}",
-        "title": "AimIndia Video Watermark Remover and Logo Overlay",
+        "title": "AimIndia Video Cleaner",
         "code_file": "aimindia-video-notebook.ipynb",
         "language": "python",
         "kernel_type": "notebook",
@@ -227,7 +227,28 @@ def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offse
     with open(kernel_dir / "kernel-metadata.json", "w") as f:
         json.dump(k_meta, f, indent=2)
 
-    api.kernels_push(str(kernel_dir))
+    # Cancel or wait if a previous kernel run is still active
+    try:
+        prev_st = api.kernels_status(f"{username}/{kernel_slug}")
+        prev_val = str(prev_st.get("status", "")).lower() if isinstance(prev_st, dict) else str(getattr(prev_st, "status", "")).lower()
+        if "running" in prev_val or "queued" in prev_val:
+            yield None, None, f"⏳ A previous run is {prev_val.upper()} on Kaggle GPU. Canceling old run..."
+            try:
+                api.kernels_cancel(f"{username}/{kernel_slug}")
+                time.sleep(5)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    try:
+        api.kernels_push(str(kernel_dir))
+    except Exception as pe:
+        detail = ""
+        if hasattr(pe, "response") and hasattr(pe.response, "text"):
+            detail = f" (Details: {pe.response.text})"
+        yield None, None, f"❌ Failed to submit kernel to Kaggle: {pe}{detail}"
+        return
 
     yield None, None, "⚡ [4/5] Kernel submitted! Kaggle Tesla T4 GPU is processing your video with NVENC hardware acceleration..."
     progress(0.7, desc="Processing on Kaggle GPU...")
@@ -240,7 +261,12 @@ def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offse
         time.sleep(8)
         poll_count += 1
         st = api.kernels_status(f"{username}/{kernel_slug}")
-        curr_st = str(st.get("status", "")).lower() if isinstance(st, dict) else str(getattr(st, "status", "")).lower()
+        if isinstance(st, dict):
+            curr_st = str(st.get("status", "")).lower()
+            fail_msg = st.get("failureMessage", "")
+        else:
+            curr_st = str(getattr(st, "status", "")).lower()
+            fail_msg = getattr(st, "failure_message", getattr(st, "failureMessage", ""))
 
         yield None, None, f"⚡ [4/5] Kaggle GPU Status: {curr_st.upper()} (check #{poll_count})"
 
@@ -259,7 +285,15 @@ def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offse
                 yield None, None, "⚠️ Kernel completed but no video file was returned."
                 return
         elif "error" in curr_st or "failed" in curr_st or "cancel" in curr_st:
-            yield None, None, f"❌ Kaggle Kernel failed with status '{curr_st}'. Check Kaggle logs."
+            log_detail = ""
+            try:
+                logs = api.kernels_logs(f"{username}/{kernel_slug}")
+                if logs:
+                    lines = [l.strip() for l in logs.split('\n') if l.strip()]
+                    log_detail = " | Last log: " + " ".join(lines[-3:])
+            except Exception:
+                pass
+            yield None, None, f"❌ Kaggle run failed ({curr_st}): {fail_msg or ''}{log_detail}"
             return
 
 with gr.Blocks(title="AimIndia Video Studio") as app:
