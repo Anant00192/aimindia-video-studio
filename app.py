@@ -33,7 +33,7 @@ NOTEBOOK_DIR = BASE_DIR / "notebook"
 MASTER_NOTEBOOK_PATH = NOTEBOOK_DIR / "aimindia-video-notebook.ipynb"
 
 DEFAULT_KAGGLE_USERNAME = "rathinnew"
-DEFAULT_KAGGLE_KEY = "KGAT_10cab40726cd143c3e7d52696187fb7a"
+DEFAULT_KAGGLE_KEY = "KGAT_a499e6bc646fe872f73e80d6481b4778"
 
 def get_video_dims(video_path):
     cmd = f"ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=x '{video_path}'"
@@ -99,11 +99,20 @@ def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offse
     else:
         os.environ.pop("KAGGLE_API_TOKEN", None)
 
+    try:
+        k_dir = Path.home() / ".kaggle"
+        k_dir.mkdir(parents=True, exist_ok=True)
+        with open(k_dir / "kaggle.json", "w") as f:
+            json.dump({"username": username, "key": key}, f)
+        os.chmod(k_dir / "kaggle.json", 0o600)
+    except Exception:
+        pass
+
     from kaggle.api.kaggle_api_extended import KaggleApi
     api = KaggleApi()
     try:
         api.authenticate()
-        if key and (str(key).startswith("KGAT_") or len(str(key)) > 32):
+        if hasattr(api, 'CONFIG_NAME_TOKEN') and key and (str(key).startswith("KGAT_") or len(str(key)) > 32):
             api.config_values[api.CONFIG_NAME_TOKEN] = str(key)
     except Exception as ae:
         yield None, None, f"❌ Kaggle authentication failed: {ae}"

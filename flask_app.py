@@ -155,7 +155,7 @@ def get_kaggle_api(username=None, key=None):
     api = KaggleApi()
     api.authenticate()
     if key and (str(key).startswith("KGAT_") or len(str(key)) > 32):
-        api.config_values[api.CONFIG_NAME_TOKEN] = str(key)
+        if hasattr(api, "CONFIG_NAME_TOKEN"): api.config_values[api.CONFIG_NAME_TOKEN] = str(key)
     return api
 
 # ==========================================
