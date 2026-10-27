@@ -83,13 +83,13 @@ def preview_position(video_in, logo_in, zoom_pct, logo_width, x_offset, y_offset
 
 def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offset, y_offset, kaggle_user, kaggle_key, progress=gr.Progress()):
     if not video_in:
-        yield None, None, "❌ Please upload a video first."
+        yield None, None, gr.update(value=None, interactive=False), "❌ Please upload a video first."
         return
 
     username = (kaggle_user or "").strip() or DEFAULT_KAGGLE_USERNAME
     key = (kaggle_key or "").strip() or DEFAULT_KAGGLE_KEY
 
-    yield None, None, f"⏳ [1/5] Authenticating Kaggle account @{username}..."
+    yield None, None, gr.update(value=None, interactive=False), f"⏳ [1/5] Authenticating Kaggle account @{username}..."
     progress(0.1, desc="Authenticating Kaggle API...")
 
     os.environ["KAGGLE_USERNAME"] = username
@@ -115,7 +115,7 @@ def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offse
         if hasattr(api, 'CONFIG_NAME_TOKEN') and key and (str(key).startswith("KGAT_") or len(str(key)) > 32):
             api.config_values[api.CONFIG_NAME_TOKEN] = str(key)
     except Exception as ae:
-        yield None, None, f"❌ Kaggle authentication failed: {ae}"
+        yield None, None, gr.update(value=None, interactive=False), f"❌ Kaggle authentication failed: {ae}"
         return
 
     temp_dir = tempfile.mkdtemp()
@@ -150,7 +150,7 @@ def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offse
             "licenses": [{"name": "CC0-1.0"}]
         }, f, indent=2)
 
-    yield None, None, f"☁️ [2/5] Uploading dataset '{username}/{dataset_slug}' to Kaggle Cloud..."
+    yield None, None, gr.update(value=None, interactive=False), f"☁️ [2/5] Uploading dataset '{username}/{dataset_slug}' to Kaggle Cloud..."
     progress(0.25, desc="Syncing dataset to Kaggle Cloud...")
 
     exists = False
@@ -173,7 +173,7 @@ def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offse
         api.dataset_create_new(str(ds_dir), public=False, dir_mode="zip")
 
     target_ver = cur_ver + 1 if exists else 1
-    yield None, None, f"⏳ Waiting for Kaggle to index dataset (targeting v{target_ver})..."
+    yield None, None, gr.update(value=None, interactive=False), f"⏳ Waiting for Kaggle to index dataset (targeting v{target_ver})..."
     progress(0.4, desc="Waiting for dataset indexing...")
 
     for _ in range(60):
@@ -187,7 +187,7 @@ def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offse
             pass
         time.sleep(3)
 
-    yield None, None, f"🚀 [3/5] Launching GPU Kernel '{username}/{kernel_slug}' on Kaggle Cloud..."
+    yield None, None, gr.update(value=None, interactive=False), f"🚀 [3/5] Launching GPU Kernel '{username}/{kernel_slug}' on Kaggle Cloud..."
     progress(0.55, desc="Launching Kaggle GPU kernel...")
 
     kernel_dir = Path(temp_dir) / "kernel"
@@ -232,7 +232,7 @@ def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offse
         prev_st = api.kernels_status(f"{username}/{kernel_slug}")
         prev_val = str(prev_st.get("status", "")).lower() if isinstance(prev_st, dict) else str(getattr(prev_st, "status", "")).lower()
         if "running" in prev_val or "queued" in prev_val:
-            yield None, None, f"⏳ A previous run is {prev_val.upper()} on Kaggle GPU. Canceling old run..."
+            yield None, None, gr.update(value=None, interactive=False), f"⏳ A previous run is {prev_val.upper()} on Kaggle GPU. Canceling old run..."
             try:
                 api.kernels_cancel(f"{username}/{kernel_slug}")
                 time.sleep(5)
@@ -247,10 +247,10 @@ def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offse
         detail = ""
         if hasattr(pe, "response") and hasattr(pe.response, "text"):
             detail = f" (Details: {pe.response.text})"
-        yield None, None, f"❌ Failed to submit kernel to Kaggle: {pe}{detail}"
+        yield None, None, gr.update(value=None, interactive=False), f"❌ Failed to submit kernel to Kaggle: {pe}{detail}"
         return
 
-    yield None, None, "⚡ [4/5] Kernel submitted! Kaggle Tesla T4 GPU is processing your video with NVENC hardware acceleration..."
+    yield None, None, gr.update(value=None, interactive=False), "⚡ [4/5] Kernel submitted! Kaggle Tesla T4 GPU is processing your video with NVENC hardware acceleration..."
     progress(0.7, desc="Processing on Kaggle GPU...")
 
     poll_count = 0
@@ -268,21 +268,26 @@ def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offse
             curr_st = str(getattr(st, "status", "")).lower()
             fail_msg = getattr(st, "failure_message", getattr(st, "failureMessage", ""))
 
-        yield None, None, f"⚡ [4/5] Kaggle GPU Status: {curr_st.upper()} (check #{poll_count})"
+        yield None, None, gr.update(value=None, interactive=False), f"⚡ [4/5] Kaggle GPU Status: {curr_st.upper()} (check #{poll_count})"
 
         if "complete" in curr_st:
-            yield None, None, "📥 [5/5] Processing complete! Downloading clean video output..."
+            yield None, None, gr.update(value=None, interactive=False), "📥 [5/5] Processing complete! Downloading clean video output..."
             progress(0.9, desc="Downloading clean video...")
             api.kernels_output(f"{username}/{kernel_slug}", path=str(out_dir))
 
             cand_files = list(out_dir.glob("FINAL_VIDEO_CLEAN.mp4")) + list(out_dir.glob("*.mp4")) + list(out_dir.glob("*.zip"))
             if cand_files:
                 final_out = cand_files[0]
-                yield str(final_out), str(final_out), f"🎉 SUCCESS! Processed cleanly on Kaggle GPU: {final_out.name}"
+                yield (
+                    str(final_out),
+                    str(final_out),
+                    gr.update(value=str(final_out), interactive=True, label=f"⬇️ Download Clean Video ({final_out.name})"),
+                    f"🎉 SUCCESS! Processed cleanly on Kaggle GPU: {final_out.name}\n⬇️ Click the large download button below or click the file card to download your clean video!"
+                )
                 progress(1.0, desc="Done!")
                 return
             else:
-                yield None, None, "⚠️ Kernel completed but no video file was returned."
+                yield None, None, gr.update(value=None, interactive=False), "⚠️ Kernel completed but no video file was returned."
                 return
         elif "error" in curr_st or "failed" in curr_st or "cancel" in curr_st:
             log_detail = ""
@@ -293,7 +298,7 @@ def process_on_kaggle(video_in, logo_in, trim_sec, zoom_pct, logo_width, x_offse
                     log_detail = " | Last log: " + " ".join(lines[-3:])
             except Exception:
                 pass
-            yield None, None, f"❌ Kaggle run failed ({curr_st}): {fail_msg or ''}{log_detail}"
+            yield None, None, gr.update(value=None, interactive=False), f"❌ Kaggle run failed ({curr_st}): {fail_msg or ''}{log_detail}"
             return
 
 with gr.Blocks(title="AimIndia Video Studio") as app:
@@ -331,8 +336,9 @@ with gr.Blocks(title="AimIndia Video Studio") as app:
         with gr.Column(scale=1):
             gr.Markdown("### 3. Preview & Output")
             preview_img = gr.Image(label="📍 Fast Position Preview")
-            v_out = gr.Video(label="🎬 Final Clean Video")
-            f_out = gr.File(label="📥 Download Processed Video File")
+            v_out = gr.Video(label="🎬 Final Clean Video (Play or click ⋮ to Download)")
+            f_out = gr.File(label="📥 Processed Video File (Click Card to Download)")
+            dl_btn = gr.DownloadButton("⬇️ Click Here to Download Clean Video (MP4)", variant="primary", size="lg", interactive=False)
             status = gr.Textbox(label="Status & Cloud Log", lines=3)
 
     preview_btn.click(
@@ -345,7 +351,7 @@ with gr.Blocks(title="AimIndia Video Studio") as app:
     btn.click(
         process_on_kaggle,
         inputs=[v_in, logo_in, trim_slider, zoom_slider, width_slider, x_offset_slider, y_offset_slider, k_user, k_key],
-        outputs=[v_out, f_out, status],
+        outputs=[v_out, f_out, dl_btn, status],
         api_name=False
     )
 
