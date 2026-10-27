@@ -3,8 +3,9 @@ title: AimIndia Video Studio
 emoji: 🎬
 colorFrom: indigo
 colorTo: purple
-sdk: docker
-app_port: 7860
+sdk: gradio
+sdk_version: 4.44.0
+app_file: app.py
 pinned: false
 license: mit
 ---
@@ -46,46 +47,13 @@ A specialized web application and Kaggle notebook workflow to automatically hide
    ```
 
 3. **Open in Browser**:
-   Visit `http://localhost:5000`
+   Visit `http://localhost:7860`
 
 ---
 
-## ☁️ Cloud Deployment
+## ☁️ Cloud Deployment on Hugging Face Spaces (100% Free)
 
-Ready for 1-click deployment on:
-- **Hugging Face Spaces** (Docker template, port 7860)
-- **Render** (using bundled `render.yaml`)
-- **Koyeb** / **Railway** (using `Dockerfile` or `Procfile`)
-
----
-
-## 📁 Repository Structure
-
-```text
-├── aimindia-video(5).ipynb              # Exact original Kaggle notebook
-├── notebook/
-│   └── aimindia-video-notebook.ipynb    # Dual-mode production notebook (Interactive + Headless)
-├── templates/
-│   └── index.html                       # Modern web studio dashboard
-├── static/
-│   ├── style.css                        # Custom responsive dark theme
-│   ├── app.js                           # Real-time UI & WebSocket-like log streaming
-│   └── default_logo.png                 # Bundled transparent AimIndia logo
-├── uploads/                             # Local staging for videos and logos
-├── output/                              # Download destination for clean videos
-├── app.py                               # Flask backend & Kaggle API orchestrator
-├── requirements.txt                     # Python dependencies
-├── Dockerfile                           # Container configuration for cloud deployment
-├── render.yaml                          # Render cloud deployment config
-├── Procfile                             # Process runner for PaaS hosting
-├── run.sh                               # Quick start shell script
-└── README.md                            # Documentation
-```
-
----
-
-## 🔒 Kaggle Credentials & Privacy
-
-- Supports Kaggle API Token (`KGAT_...`) or standard API Key.
-- Remembers credentials in secure browser cookies so you don't need to re-enter them across sessions.
-- Automatically creates and manages private datasets on Kaggle.
+1. Go to [Hugging Face New Space](https://huggingface.co/new-space).
+2. Select **Gradio** as Space SDK.
+3. Choose **CPU basic (Free)**.
+4. Connect this GitHub repository: `Anant00192/aimindia-video-studio`.
